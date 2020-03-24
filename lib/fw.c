@@ -406,7 +406,7 @@ int switchtec_fw_write_fd_ex(struct switchtec_dev *dev,
 		if (ret != 0)
 			return ret;
 
-		offset += cmd.hdr.blk_length;
+		offset += le32toh(cmd.hdr.blk_length);
 
 		if (progress_callback)
 			progress_callback(offset, image_size);
@@ -520,7 +520,7 @@ int switchtec_fw_write_file_ex(struct switchtec_dev *dev,
 		if (ret != 0)
 			return ret;
 
-		offset += cmd.hdr.blk_length;
+		offset += le32toh(cmd.hdr.blk_length);
 
 		if (progress_callback)
 			progress_callback(offset, image_size);
@@ -711,7 +711,7 @@ static int switchtec_fw_file_info_gen4(int fd,
 
 	info->gen = SWITCHTEC_GEN4;
 
-	switch (hdr.type) {
+	switch (le32toh(hdr.type)) {
 	case SWITCHTEC_FW_IMG_TYPE_MAP_GEN4:
 		info->part_id = SWITCHTEC_FW_PART_ID_G4_MAP0;
 		break;
@@ -738,7 +738,7 @@ static int switchtec_fw_file_info_gen4(int fd,
 	};
 
 	info->image_crc = le32toh(hdr.image_crc);
-	version_to_string(hdr.version, info->version, sizeof(info->version));
+	version_to_string(le32toh(hdr.version), info->version, sizeof(info->version));
 	info->image_len = le32toh(hdr.image_len);
 
 	info->type = switchtec_fw_id_to_type(info);
@@ -771,9 +771,9 @@ int switchtec_fw_file_info(int fd, struct switchtec_fw_image_info *info)
 	}
 
 	if (!strncmp(magic, "PMC", sizeof(magic))) {
-		switchtec_fw_file_info_gen3(fd, info);
+		return switchtec_fw_file_info_gen3(fd, info);
 	} else if (!strncmp(magic, "MSCC", sizeof(magic))) {
-		switchtec_fw_file_info_gen4(fd, info);
+		return switchtec_fw_file_info_gen4(fd, info);
 	} else {
 		errno = ENOEXEC;
 		return -1;
@@ -938,11 +938,11 @@ static int switchtec_fw_info_metadata_gen4(struct switchtec_dev *dev,
 	if (strncmp(metadata->sub_magic, "_MD ", sizeof(metadata->sub_magic)))
 		goto err_out;
 
-	version_to_string(metadata->version, inf->version,
+	version_to_string(le32toh(metadata->version), inf->version,
 			  sizeof(inf->version));
-	inf->part_body_offset = metadata->header_len;
-	inf->image_crc = metadata->image_crc;
-	inf->image_len = metadata->image_len;
+	inf->part_body_offset = le32toh(metadata->header_len);
+	inf->image_crc = le32toh(metadata->image_crc);
+	inf->image_len = le32toh(metadata->image_len);
 	inf->metadata = metadata;
 
 	return 0;
@@ -1041,8 +1041,8 @@ static int switchtec_fw_part_info_gen4(struct switchtec_dev *dev,
 	if(!inf->valid)
 		return 0;
 
-	inf->part_addr = part_info->part_start;
-	inf->part_len = part_info->part_size_dw * 4;
+	inf->part_addr = le32toh(part_info->part_start);
+	inf->part_len = le32toh(part_info->part_size_dw) * 4;
 	inf->active = part_info->active;
 	inf->running = part_info->is_using;
 	inf->read_only = part_info->read_only;
@@ -1075,7 +1075,10 @@ static int switchtec_fw_part_info(struct switchtec_dev *dev, int nr_info,
 			    &all_info, sizeof(all_info));
 	if (ret < 0)
 		return ret;
-	
+	all_info.firmware_version = le32toh(all_info.firmware_version);
+	all_info.flash_size = le32toh(all_info.flash_size);
+	all_info.device_id = le16toh(all_info.device_id);
+
 	for (i = 0; i < nr_info; i++) {
 		struct switchtec_fw_image_info *inf = &info[i];
 		ret = 0;
@@ -1118,6 +1121,7 @@ static long multicfg_subcmd(struct switchtec_dev *dev, uint32_t subcmd,
 	uint32_t result;
 
 	subcmd |= index << 8;
+	subcmd = htole32(subcmd);
 
 	ret = switchtec_cmd(dev, MRPC_MULTI_CFG, &subcmd, sizeof(subcmd),
 			    &result, sizeof(result));
